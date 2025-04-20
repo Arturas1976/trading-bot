@@ -13,11 +13,9 @@ chat_id_2 = os.getenv('CHAT_ID_2')
 
 # List of symbols to analyze
 symbols = [
-    'BTC-USD', 'XAUUSD=X', 'ETH-USD', 'GBPUSD=X', 'AUDUSD=X', 'USDJPY=X',
-    'US500', 'NASDAQ100', 'DXY', 'LTC-USD', 'XAGUSD=X', 'BTC-EUR',
-    'ETH-EUR', 'XAUUSD=X', 'XRP-USD', 'DOGE-USD', 'SOL-USD', 'ADA-USD',
-    'TSLA', 'AAPL', 'GOOG', 'AMZN', 'MSFT', 'NVDA', 'META', 'SPY', 'NFLX',
-    'BCH-USD', 'DOT-USD', 'MATIC-USD'
+    'BTC-USD', 'ETH-USD', 'GBPUSD=X', 'AUDUSD=X', 'USDJPY=X', 
+    'TSLA', 'AAPL', 'GOOG', 'AMZN', 'MSFT', 'NVDA', 'META', 
+    'SPY', 'NFLX', 'BCH-USD', 'SOL-USD', 'ADA-USD'
 ]
 
 # Function to send message to Telegram
@@ -36,9 +34,17 @@ def calculate_indicators(data):
 
 # Function to fetch data from Yahoo Finance
 def fetch_data(symbol):
-    data = yf.download(symbol, period='1d', interval='15m')
-    data.dropna(inplace=True)
-    return data
+    try:
+        data = yf.download(symbol, period='1d', interval='15m')
+        data.dropna(inplace=True)
+        if data.empty:
+            raise ValueError(f"No data found for {symbol}")
+        return data
+    except Exception as e:
+        error_message = f"Error fetching data for {symbol}: {str(e)}"
+        send_telegram_message(error_message, chat_id_1)
+        send_telegram_message(error_message, chat_id_2)
+        return None
 
 # Function to get recommendation for take profit and stop loss
 def get_recommendations(symbol, action, data):
@@ -50,29 +56,26 @@ def get_recommendations(symbol, action, data):
 # Function to analyze the symbols
 def analyze_symbols():
     for symbol in symbols:
-        try:
-            data = fetch_data(symbol)
-            rsi, macd_diff = calculate_indicators(data)
-            
-            # Check if RSI and MACD conditions are met
-            if rsi < 30 and macd_diff > 0:
-                message = f"Buy Signal for {symbol}!\nRSI: {rsi:.2f}\nMACD Diff: {macd_diff:.2f}"
-                recommendations = get_recommendations(symbol, 'buy', data)
-                message += "\n" + recommendations
-                send_telegram_message(message, chat_id_1)
-                send_telegram_message(message, chat_id_2)
+        data = fetch_data(symbol)
+        if data is None:
+            continue  # Skip symbol if no data is available
 
-            elif rsi > 70 and macd_diff < 0:
-                message = f"Sell Signal for {symbol}!\nRSI: {rsi:.2f}\nMACD Diff: {macd_diff:.2f}"
-                recommendations = get_recommendations(symbol, 'sell', data)
-                message += "\n" + recommendations
-                send_telegram_message(message, chat_id_1)
-                send_telegram_message(message, chat_id_2)
+        rsi, macd_diff = calculate_indicators(data)
+        
+        # Check if RSI and MACD conditions are met
+        if rsi < 30 and macd_diff > 0:
+            message = f"Buy Signal for {symbol}!\nRSI: {rsi:.2f}\nMACD Diff: {macd_diff:.2f}"
+            recommendations = get_recommendations(symbol, 'buy', data)
+            message += "\n" + recommendations
+            send_telegram_message(message, chat_id_1)
+            send_telegram_message(message, chat_id_2)
 
-        except Exception as e:
-            error_message = f"Error processing {symbol}: {str(e)}"
-            send_telegram_message(error_message, chat_id_1)
-            send_telegram_message(error_message, chat_id_2)
+        elif rsi > 70 and macd_diff < 0:
+            message = f"Sell Signal for {symbol}!\nRSI: {rsi:.2f}\nMACD Diff: {macd_diff:.2f}"
+            recommendations = get_recommendations(symbol, 'sell', data)
+            message += "\n" + recommendations
+            send_telegram_message(message, chat_id_1)
+            send_telegram_message(message, chat_id_2)
 
 # Test signal on bot startup (only once)
 def send_test_signal():
