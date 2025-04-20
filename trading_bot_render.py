@@ -37,8 +37,9 @@ def send_message_to_telegram(message):
     except Exception as e:
         print(f"Error sending message: {e}")
 
-# Testsignal när boten startar
-send_message_to_telegram("Botten är online och fungerar!")
+# Testsignal när boten startar, skickas endast en gång
+def send_initial_message():
+    send_message_to_telegram("Botten är online och fungerar!")
 
 # Funktion för att hämta marknadsdata och beräkna tekniska indikatorer
 def fetch_data():
@@ -64,6 +65,9 @@ def check_signals(data):
     # När RSI är över 70, sälj
     elif latest_rsi > 70:
         send_message_to_telegram("RSI är över 70 - SÄLJ!")
+
+# Skicka testmeddelande vid uppstart
+send_initial_message()
 
 # Huvudloop för att hämta data och kontrollera signaler
 while True:
