@@ -1,95 +1,54 @@
-import yfinance as yf
+import os
 import time
 import requests
-import os
-import pandas as pd
-import ta
+import yfinance as yf
+import talib as ta
+from datetime import datetime
 
-# Gauti duomenis iš Environment Variables
-API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # Tavo Telegram bot token
-GROUP_CHAT_ID = os.getenv('GROUP_CHAT_ID')   # Tavo Telegram grupės chat ID (pvz. -1001234567890)
+# Telegram Bot token och chat id
+API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # Din Telegram Bot Token
+chat_id_1 = os.getenv('CHAT_ID_1')  # Första Telegram Chat ID
+chat_id_2 = os.getenv('CHAT_ID_2')  # Andra Telegram Chat ID
 
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
-    data = {
-        "chat_id": GROUP_CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
-    try:
-        response = requests.post(url, data=data)
-        if not response.ok:
-            print("❌ Klaida siunčiant į Telegram:", response.text)
-    except Exception as e:
-        print("❌ Išimtis:", e)
+# Funktion för att skicka meddelande till Telegram
+def send_message(chat_id, message):
+    url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage?chat_id={chat_id}&text={message}"
+    response = requests.get(url)
+    return response.json()
 
-def test_telegram_bot():
-    message = "✅ Botas buvo paleistas sėkmingai!"
-    send_telegram_message(message)
+# Funktion för att hämta RSI och skapa signaler
+def get_rsi_signal():
+    # Hämta senaste data för BTC/USD
+    symbol = 'BTC-USD'
+    data = yf.download(symbol, period="1d", interval="15m")
+    
+    # Beräkna RSI
+    close_prices = data['Close']
+    rsi = ta.RSI(close_prices, timeperiod=14)[-1]  # Få senaste RSI-värdet
 
-def analyze_market(symbol):
-    try:
-        df = yf.download(symbol, period="7d", interval="15m")
-        if df.empty or len(df) < 100:
-            return
+    # Skapa signal baserat på RSI
+    if rsi < 30:
+        return "RSI är under 30 - *KÖP*"
+    elif rsi > 70:
+        return "RSI är över 70 - *SÄLJ*"
+    else:
+        return "RSI är neutral - *HÅLL*"
 
-        df.dropna(inplace=True)
+# Skicka testsignal vid scriptstart
+def send_test_signal():
+    message = "Testsignal: Bot är igång och redo att skicka signals!"
+    send_message(chat_id_1, message)
+    send_message(chat_id_2, message)
 
-        # RSI
-        rsi = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
-        last_rsi = rsi.iloc[-1]
-
-        # Moving Average
-        ma = ta.trend.SMAIndicator(df['Close'], window=20).sma_indicator()
-        last_ma = ma.iloc[-1]
-
-        # MACD
-        macd = ta.trend.MACD(df['Close'])
-        macd_val = macd.macd_diff().iloc[-1]
-
-        # Bollinger Bands
-        bb = ta.volatility.BollingerBands(df['Close'])
-        upper = bb.bollinger_hband().iloc[-1]
-        lower = bb.bollinger_lband().iloc[-1]
-        close_price = df['Close'].iloc[-1]
-
-        message = f"📊 <b>{symbol}</b>\n"
-        message += f"📉 RSI: {last_rsi:.2f}\n"
-        message += f"📈 MA(20): {last_ma:.2f}\n"
-        message += f"📊 MACD Diff: {macd_val:.4f}\n"
-        message += f"📎 Bollinger: {lower:.2f} - {upper:.2f}\n"
-        message += f"💰 Kaina: {close_price:.2f}\n"
-
-        signal = None
-        if last_rsi < 30:
-            signal = "🟢 <b>PIRKTI</b> (RSI < 30)"
-        elif last_rsi > 70:
-            signal = "🔴 <b>PARDUOTI</b> (RSI > 70)"
-
-        if signal:
-            message += f"\n🚨 SIGNALAS: {signal}"
-
-        send_telegram_message(message)
-
-    except Exception as e:
-        print(f"Klaida su {symbol}: {e}")
-
+# Huvudlogik för att köra signaler
 def main():
-    # Testinė žinutė, kad botukas veikia
-    test_telegram_bot()
-
-    send_telegram_message("✅ <b>Trading botas paleistas sėkmingai!</b>\nTikrinam rinkas kas 15 min...")
-
-    symbols = [
-        "BTC-USD", "ETH-USD", "SOL-USD",
-        "AAPL", "TSLA", "MSFT",
-        "EURUSD=X", "GBPUSD=X", "GC=F"  # Pakeistas auksas
-    ]
-
+    send_test_signal()  # Skicka en testsignal vid start
     while True:
-        for symbol in symbols:
-            analyze_market(symbol)
-        time.sleep(900)  # 15 min (900 sek)
+        signal = get_rsi_signal()  # Hämta signal
+        print(f"{datetime.now()}: {signal}")  # Skriv ut signal i terminalen
+        send_message(chat_id_1, signal)  # Skicka till första Telegram chat
+        send_message(chat_id_2, signal)  # Skicka till andra Telegram chat
+        time.sleep(900)  # Vänta 15 minuter (900 sekunder) innan nästa signal
 
 if __name__ == "__main__":
     main()
