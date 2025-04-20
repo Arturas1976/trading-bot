@@ -79,4 +79,4 @@ while True:
             send_telegram_message(f"📊 {symbol} signalas:\n{signal}")
         except Exception as e:
             send_telegram_message(f"⚠️ Klaida tikrinant {symbol}: {e}")
-    time.sleep(3600)  # Kartojam kas 1 valandą
+    time.sleep(900)  # Kartojam kas 15 minučių (900 sekundžių)
