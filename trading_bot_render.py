@@ -1,86 +1,81 @@
-import yfinance as yf
-import pandas as pd
-import ta
-import time
 import os
+import requests
+import time
+import talib
+import numpy as np
+import yfinance as yf
 from telegram import Bot
 
-# Telegram inställningar från miljövariabler
-TOKEN = os.getenv("TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+# Hämtar miljövariabler från Render
+API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # Din Telegram Bot Token
+group_chat_id = os.getenv('GROUP_CHAT_ID')  # Din Telegram gruppens Chat ID
 
-bot = Bot(token=TOKEN)
+# Initiera Telegram Bot
+bot = Bot(token=API_TOKEN)
 
-# Symboler att övervaka
-symbols = ["BTC-USD", "ETH-USD", "AAPL", "SOL-USD", "EURUSD=X", "TSLA", "GC=F"]  # Gold
+# Skicka ett testmeddelande till Telegram-gruppen vid uppstart
+def send_test_message():
+    try:
+        bot.send_message(chat_id=group_chat_id, text="Signalai aktyvus!")
+    except Exception as e:
+        print(f"Fel vid testmeddelande: {e}")
 
-# Funktion för att hämta marknadsdata
-def fetch_data(symbol, interval="1h", period="7d"):
-    df = yf.download(tickers=symbol, interval=interval, period=period)
-    df.dropna(inplace=True)
-    return df
-
-# Lägg till tekniska indikatorer
-def add_indicators(df):
-    df['rsi'] = ta.momentum.RSIIndicator(close=df['Close']).rsi()
-    df['ma'] = ta.trend.SMAIndicator(close=df['Close'], window=14).sma_indicator()
-    macd = ta.trend.MACD(close=df['Close'])
-    df['macd'] = macd.macd()
-    df['macd_signal'] = macd.macd_signal()
-    bb = ta.volatility.BollingerBands(close=df['Close'])
-    df['bb_upper'] = bb.bollinger_hband()
-    df['bb_lower'] = bb.bollinger_lband()
-    return df
-
-# Skapa signal utifrån indikatorer
-def generate_signal(df):
-    last = df.iloc[-1]
-    signal = []
-
-    if last['rsi'] < 30:
-        signal.append(f"🟢 RSI < 30 → KÖP ({last['rsi']:.2f})")
-    elif last['rsi'] > 70:
-        signal.append(f"🔴 RSI > 70 → SÄLJ ({last['rsi']:.2f})")
-
-    if last['macd'] > last['macd_signal']:
-        signal.append("📈 MACD signal → KÖP")
-    elif last['macd'] < last['macd_signal']:
-        signal.append("📉 MACD signal → SÄLJ")
-
-    if last['Close'] < last['bb_lower']:
-        signal.append("🧊 Under Bollinger Band → MÖJLIG BOTTEN")
-    elif last['Close'] > last['bb_upper']:
-        signal.append("🔥 Över Bollinger Band → MÖJLIG TOPP")
-
-    return "\n".join(signal) if signal else None
-
-# Skicka signal till Telegram
+# Funktion för att skicka meddelanden till Telegram
 def send_to_telegram(message):
     try:
         bot.send_message(chat_id=group_chat_id, text=message)
     except Exception as e:
         print(f"Fel vid skickande till gruppen: {e}")
 
-# Huvudloop
-def run_bot():
-    # 🔹 Testsignal när boten startar
-    send_to_telegram("✅ Trading-boten är live på Render!")
+# Funktion för att analysera aktier/valutor och ge signaler
+def analyze_stock(symbol):
+    # Hämta historisk data från Yahoo Finance
+    data = yf.download(symbol, period="5d", interval="15m")
     
-    while True:
-        print("🔁 Kontrollerar marknaden...")
-        for symbol in symbols:
-            try:
-                df = fetch_data(symbol)
-                df = add_indicators(df)
-                signal = generate_signal(df)
-                if signal:
-                    full_message = f"📊 {symbol}\n{signal}"
-                    print(full_message)
-                    send_to_telegram(full_message)
-            except Exception as e:
-                print(f"Fel med {symbol}: {e}")
+    # Beräkna tekniska indikatorer
+    rsi = talib.RSI(data['Close'], timeperiod=14)[-1]  # RSI
+    macd, macdsignal, macdhist = talib.MACD(data['Close'], fastperiod=12, slowperiod=26, signalperiod=9)
+    upperband, middleband, lowerband = talib.BBANDS(data['Close'], timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
 
-        time.sleep(3600)  # Kör varje timme
+    # Skapa meddelande baserat på indikatorvärden
+    message = f"Analyserar {symbol}:\n"
+    
+    # RSI Signal
+    if rsi < 30:
+        message += f"RSI är under 30 – *Köp signal*\n"
+    elif rsi > 70:
+        message += f"RSI är över 70 – *Sälj signal*\n"
+
+    # MACD Signal
+    if macd[-1] > macdsignal[-1]:
+        message += "MACD signal: Köp\n"
+    elif macd[-1] < macdsignal[-1]:
+        message += "MACD signal: Sälj\n"
+
+    # Bollinger Bands Signal
+    if data['Close'][-1] < lowerband[-1]:
+        message += "Bollinger Bands: Köp\n"
+    elif data['Close'][-1] > upperband[-1]:
+        message += "Bollinger Bands: Sälj\n"
+
+    # Skicka sammanfattning till Telegram
+    send_to_telegram(message)
+    return message
+
+# Funktion för att köra boten och analysera olika symboler
+def main():
+    # Symboler att övervaka
+    symbols = ['BTC-USD', 'ETH-USD', 'AAPL', 'GOOG', 'EURUSD=X']
+
+    # Skicka testmeddelande vid uppstart
+    send_test_message()
+
+    # Huvudloop för att kontinuerligt analysera och skicka signaler var 15:e minut
+    while True:
+        for symbol in symbols:
+            message = analyze_stock(symbol)
+            print(f"Skickade meddelande för {symbol}: {message}")
+        time.sleep(60 * 15)  # Vänta 15 minuter innan nästa analys
 
 if __name__ == "__main__":
-    run_bot()
+    main()
