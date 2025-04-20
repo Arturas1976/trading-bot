@@ -23,6 +23,10 @@ def send_telegram_message(message):
     except Exception as e:
         print("❌ Išimtis:", e)
 
+def test_telegram_bot():
+    message = "✅ Botas buvo paleistas sėkmingai!"
+    send_telegram_message(message)
+
 def analyze_market(symbol):
     try:
         df = yf.download(symbol, period="7d", interval="15m")
@@ -71,13 +75,16 @@ def analyze_market(symbol):
         print(f"Klaida su {symbol}: {e}")
 
 def main():
-    send_telegram_message("✅ <b>Trading botas paleistas!</b>\nTikrinam rinkas kas 15 min...")
+    # Testinė žinutė, kad botukas veikia
+    test_telegram_bot()
+
+    send_telegram_message("✅ <b>Trading botas paleistas sėkmingai!</b>\nTikrinam rinkas kas 15 min...")
 
     symbols = [
-    "BTC-USD", "ETH-USD", "SOL-USD",
-    "AAPL", "TSLA", "MSFT",
-    "EURUSD=X", "GBPUSD=X", "GC=F"  # Pakeistas auksas
-]
+        "BTC-USD", "ETH-USD", "SOL-USD",
+        "AAPL", "TSLA", "MSFT",
+        "EURUSD=X", "GBPUSD=X", "GC=F"  # Pakeistas auksas
+    ]
 
     while True:
         for symbol in symbols:
