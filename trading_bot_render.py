@@ -2,7 +2,7 @@ import os
 import time
 import requests
 import yfinance as yf
-import talib as ta
+import ta
 from datetime import datetime
 
 # Telegram Bot token och chat id
