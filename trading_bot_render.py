@@ -1,77 +1,73 @@
-import os
-import time
 import yfinance as yf
 import pandas as pd
-import ta
+from ta.momentum import RSIIndicator
+from ta.trend import MACD
+import time
 import requests
-from datetime import datetime
+import os
 
-# Din Telegram Bot Token och Chat IDs
-API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # Din Telegram Bot Token
-chat_id_1 = os.getenv('CHAT_ID_1')  # Första Telegram Chat ID
-chat_id_2 = os.getenv('CHAT_ID_2')  # Andra Telegram Chat ID
+# Telegram settings
+API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+chat_id_1 = os.getenv('CHAT_ID_1')
+chat_id_2 = os.getenv('CHAT_ID_2')
 
-# Funktion för att hämta data
-def fetch_data(symbol, period='1d', interval='1m'):
-    data = yf.download(symbol, period=period, interval=interval)
-    data['rsi'] = ta.momentum.RSIIndicator(data['Close'], window=14).rsi()
-    data['macd'] = ta.trend.MACD(data['Close']).macd()
-    return data
-
-# Skicka signaler till Telegram
-def send_signal(message, chat_id):
+# Function to send messages to Telegram
+def send_telegram_message(message, chat_id):
     url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
-    payload = {
+    params = {
         'chat_id': chat_id,
         'text': message
     }
-    requests.post(url, data=payload)
+    response = requests.get(url, params=params)
+    return response.json()
 
-# Kontrollera RSI och MACD och ge signaler
-def check_signal(data, symbol):
-    last_rsi = data['rsi'].iloc[-1]
-    last_macd = data['macd'].iloc[-1]
-    message = ""
-    
-    # Köpsignal: RSI under 30 och MACD positiv
-    if last_rsi < 30 and last_macd > 0:
-        message = f"KÖP signal för {symbol}! RSI: {last_rsi}, MACD: {last_macd}. Rekommendation: Stop Loss vid {data['Close'].iloc[-1] * 0.98}, Take Profit vid {data['Close'].iloc[-1] * 1.05}."
-        
-    # Säljsignal: RSI över 70 och MACD negativ
-    elif last_rsi > 70 and last_macd < 0:
-        message = f"SÄLJ signal för {symbol}! RSI: {last_rsi}, MACD: {last_macd}. Rekommendation: Stop Loss vid {data['Close'].iloc[-1] * 1.02}, Take Profit vid {data['Close'].iloc[-1] * 0.95}."
-        
-    return message
+# Fetch data for a symbol
+def fetch_data(symbol):
+    data = yf.download(symbol, period="1d", interval="15m")  # 15-minute interval data
+    data = data[['Close']]  # Only use the 'Close' price
+    data = data.reset_index()  # Reset index to handle any datetime issues
+    data['Close'] = data['Close'].values  # Ensure 'Close' is a 1D array
+    return data
 
-# Skicka testmeddelande till båda konton vid start
-def send_test_signal():
-    message = "Test Signal: Boten är igång och redo att ge signaler!"
-    send_signal(message, chat_id_1)
-    send_signal(message, chat_id_2)
+# Calculate RSI
+def calculate_rsi(data):
+    rsi = RSIIndicator(data['Close'], window=14)  # RSI with a window size of 14
+    return rsi.rsi()  # This returns a series which can be used directly
 
-# Huvudloop
-def run_bot():
-    symbols = ['BTC-USD', 'ETH-USD', 'XAUUSD=X', 'AAPL', 'TSLA', 'SOLANA-USD', 'EURUSD=X']  # Lägg till fler symboler här
-    interval = 900  # 15 minuter i sekunder
-    last_signal_time = 0  # Sista signal tid
+# Calculate MACD
+def calculate_macd(data):
+    macd = MACD(data['Close'], window_slow=26, window_fast=12, window_sign=9)  # MACD settings
+    return macd.macd(), macd.macd_signal()  # Return MACD line and signal line
 
-    # Skicka testsignal en gång vid uppstart
-    send_test_signal()
+# Define trading symbols
+symbols = ['BTC-USD', 'ETH-USD', 'AAPL', 'SOLANA', 'EURUSD=X', 'TESSLA', 'XAUUSD=X']  # Example symbols to analyze
 
-    while True:
-        current_time = time.time()
-        
-        if current_time - last_signal_time >= interval:
-            for symbol in symbols:
-                data = fetch_data(symbol)
-                signal = check_signal(data, symbol)
-                
-                if signal:
-                    send_signal(signal, chat_id_1)  # Skicka signal till första chatten
-                    send_signal(signal, chat_id_2)  # Skicka signal till andra chatten
-                    last_signal_time = current_time  # Uppdatera senaste signal tid
+# Main loop to analyze each symbol every 15 minutes
+while True:
+    for symbol in symbols:
+        data = fetch_data(symbol)  # Fetch data for the symbol
+        rsi = calculate_rsi(data)  # Calculate RSI
+        macd, macd_signal = calculate_macd(data)  # Calculate MACD
 
-        time.sleep(60)  # Vänta 1 minut innan nästa koll
+        # Get the latest RSI and MACD values
+        latest_rsi = rsi.iloc[-1]
+        latest_macd = macd.iloc[-1]
+        latest_macd_signal = macd_signal.iloc[-1]
 
-if __name__ == "__main__":
-    run_bot()
+        # Print the values for debugging
+        print(f"{symbol}: RSI={latest_rsi}, MACD={latest_macd}, MACD Signal={latest_macd_signal}")
+
+        # Check if RSI is below 30 and MACD is bullish (crossing above signal line) for buying signal
+        if latest_rsi < 30 and latest_macd > latest_macd_signal:
+            message = f"Buy Signal for {symbol}: RSI={latest_rsi}, MACD={latest_macd}, MACD Signal={latest_macd_signal}"
+            send_telegram_message(message, chat_id_1)
+            send_telegram_message(message, chat_id_2)
+
+        # Check if RSI is above 70 and MACD is bearish (crossing below signal line) for selling signal
+        elif latest_rsi > 70 and latest_macd < latest_macd_signal:
+            message = f"Sell Signal for {symbol}: RSI={latest_rsi}, MACD={latest_macd}, MACD Signal={latest_macd_signal}"
+            send_telegram_message(message, chat_id_1)
+            send_telegram_message(message, chat_id_2)
+
+    # Wait for 15 minutes before the next iteration
+    time.sleep(900)  # 900 seconds = 15 minutes
