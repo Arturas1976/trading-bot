@@ -12,7 +12,22 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_IDS = [os.getenv("CHAT_ID_1"), os.getenv("CHAT_ID_2")]
 TELEGRAM_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
-SYMBOLS = ["EURUSD", "GBPUSD", "AAPL", "TSLA"]
+SYMBOLS = []
+
+forex_pairs = [
+    "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD"
+]
+
+crypto_pairs = [
+    "DOTUSD", "ATOMUSD", "ICPUSD", "SANDUSD", "MANTAUSD", "SOLUSD", 
+    "ETHUSD", "DOGEUSD", "BTCUSD", "LINKUSD", "AVAXUSD", "ADAUSD", "MATICUSD"
+]
+
+stock_symbols = [
+    "AAPL", "TSLA", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "NFLX", "JPM", "V"
+]
+
+SYMBOLS = forex_pairs + crypto_pairs + stock_symbols
 
 def send_telegram_message(message: str):
     for chat_id in CHAT_IDS:
@@ -22,35 +37,40 @@ def send_telegram_message(message: str):
             except requests.RequestException as e:
                 print(f"Telegram error: {e}")
 
-def fetch_data(symbol: str, interval="15min", outputsize="compact"):
-    function = "TIME_SERIES_INTRADAY"
-    if symbol.endswith("USD"):
-        function = "FX_INTRADAY"
-        from_symbol = symbol[:3]
-        to_symbol = symbol[3:]
-        url = f"https://www.alphavantage.co/query?function={function}&from_symbol={from_symbol}&to_symbol={to_symbol}&interval={interval}&outputsize={outputsize}&apikey={ALPHA_VANTAGE_API_KEY}"
-    else:
-        url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol}&interval={interval}&outputsize={outputsize}&apikey={ALPHA_VANTAGE_API_KEY}"
+def fetch_data(symbol):
     try:
-        response = requests.get(url)
-        data = response.json()
-        time_series_key = f"Time Series ({interval})"
-        if time_series_key not in data:
-            raise ValueError(f"No data for {symbol}")
-        df = pd.DataFrame.from_dict(data[time_series_key], orient="index")
-        df = df.rename(columns={
-            "1. open": "Open",
-            "2. high": "High",
-            "3. low": "Low",
-            "4. close": "Close",
-            "5. volume": "Volume"
-        })
-        df.index = pd.to_datetime(df.index)
+        if symbol.endswith("USD") and symbol not in ["AAPL", "TSLA", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "NFLX", "JPM", "V"]:
+            # Anta att det är en kryptovaluta
+            function = "CRYPTO_INTRADAY"
+            market = "USD"
+            url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol[:-3]}&market={market}&interval=15min&apikey={API_KEY}&outputsize=compact"
+            response = requests.get(url)
+            data = response.json().get("Time Series Crypto (15min)", {})
+        elif symbol in ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD"]:
+            # Forex-par
+            function = "FX_INTRADAY"
+            url = f"https://www.alphavantage.co/query?function={function}&from_symbol={symbol[:3]}&to_symbol={symbol[3:]}&interval=15min&apikey={API_KEY}&outputsize=compact"
+            response = requests.get(url)
+            data = response.json().get("Time Series FX (15min)", {})
+        else:
+            # Anta att det är en aktie
+            function = "TIME_SERIES_INTRADAY"
+            url = f"https://www.alphavantage.co/query?function={function}&symbol={symbol}&interval=15min&apikey={API_KEY}&outputsize=compact"
+            response = requests.get(url)
+            data = response.json().get("Time Series (15min)", {})
+
+        if not data:
+            raise Exception(f"{symbol}: No valid time series data found.")
+
+        df = pd.DataFrame.from_dict(data, orient='index')
         df = df.astype(float)
+        df.index = pd.to_datetime(df.index)
         df.sort_index(inplace=True)
+
         return df
+
     except Exception as e:
-        print(f"Data fetch error for {symbol}: {e}")
+        print(f"Failed to fetch data for {symbol}: {e}")
         return None
 
 def generate_tp_sl(price: float, signal: str):
