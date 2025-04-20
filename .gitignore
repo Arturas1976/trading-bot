@@ -1,3 +1,22 @@
+# Ignorera miljöfil
 .env
+
+# Ignorera Python-kompilerade filer
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+
+# Ignorera virtuella miljöer
+.venv/
+venv/
+env/
+
+# Ignorera loggar
+*.log
+
+# Ignorera Jupyter notebooks checkpoints (om du använder)
+.ipynb_checkpoints/
+
+# Ignorera OS-specifika filer
+.DS_Store
+Thumbs.db
