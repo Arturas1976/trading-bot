@@ -1,99 +1,77 @@
 import os
 import time
-import requests
 import yfinance as yf
 import pandas as pd
 import ta
+import requests
 from datetime import datetime
 
-# Telegram Bot Token och Chat ID från miljövariabler
-API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-chat_id_1 = os.getenv('CHAT_ID_1')
-chat_id_2 = os.getenv('CHAT_ID_2')
+# Din Telegram Bot Token och Chat IDs
+API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # Din Telegram Bot Token
+chat_id_1 = os.getenv('CHAT_ID_1')  # Första Telegram Chat ID
+chat_id_2 = os.getenv('CHAT_ID_2')  # Andra Telegram Chat ID
 
-# Funktion för att skicka meddelanden till Telegram
-def send_message(chat_id, text):
-    url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
-    params = {
-        'chat_id': chat_id,
-        'text': text
-    }
-    response = requests.get(url, params=params)
-    return response.json()
-
-# Beräkna Stop Loss och Take Profit
-def calculate_take_profit_and_stop_loss(entry_price, volatility=0.02):
-    # Stop Loss och Take Profit baserat på 2% volatilitet (kan justeras)
-    stop_loss = entry_price * (1 - volatility)  # 2% under köppriset
-    take_profit = entry_price * (1 + volatility)  # 2% över köppriset
-    return stop_loss, take_profit
-
-# Funktion för att hämta marknadsdata
-def fetch_data(symbol, interval='15m', period='1d'):
-    data = yf.download(symbol, interval=interval, period=period)
+# Funktion för att hämta data
+def fetch_data(symbol, period='1d', interval='1m'):
+    data = yf.download(symbol, period=period, interval=interval)
+    data['rsi'] = ta.momentum.RSIIndicator(data['Close'], window=14).rsi()
+    data['macd'] = ta.trend.MACD(data['Close']).macd()
     return data
 
-# Funktion för att beräkna RSI
-def calculate_rsi(data):
-    rsi = ta.momentum.RSIIndicator(data['Close'], window=14).rsi()
-    return rsi
+# Skicka signaler till Telegram
+def send_signal(message, chat_id):
+    url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
+    payload = {
+        'chat_id': chat_id,
+        'text': message
+    }
+    requests.post(url, data=payload)
 
-# Funktion för att beräkna MACD
-def calculate_macd(data):
-    macd = ta.trend.MACD(data['Close'])
-    macd_signal = macd.macd_signal()
-    macd_diff = macd.macd_diff()
-    return macd, macd_signal, macd_diff
+# Kontrollera RSI och MACD och ge signaler
+def check_signal(data, symbol):
+    last_rsi = data['rsi'].iloc[-1]
+    last_macd = data['macd'].iloc[-1]
+    message = ""
+    
+    # Köpsignal: RSI under 30 och MACD positiv
+    if last_rsi < 30 and last_macd > 0:
+        message = f"KÖP signal för {symbol}! RSI: {last_rsi}, MACD: {last_macd}. Rekommendation: Stop Loss vid {data['Close'].iloc[-1] * 0.98}, Take Profit vid {data['Close'].iloc[-1] * 1.05}."
+        
+    # Säljsignal: RSI över 70 och MACD negativ
+    elif last_rsi > 70 and last_macd < 0:
+        message = f"SÄLJ signal för {symbol}! RSI: {last_rsi}, MACD: {last_macd}. Rekommendation: Stop Loss vid {data['Close'].iloc[-1] * 1.02}, Take Profit vid {data['Close'].iloc[-1] * 0.95}."
+        
+    return message
 
-# Huvudfunktion som kontrollerar signalerna och skickar ut dem
-def check_and_send_signal(symbol):
-    data = fetch_data(symbol)
-    rsi = calculate_rsi(data)
-    macd, macd_signal, macd_diff = calculate_macd(data)
+# Skicka testmeddelande till båda konton vid start
+def send_test_signal():
+    message = "Test Signal: Boten är igång och redo att ge signaler!"
+    send_signal(message, chat_id_1)
+    send_signal(message, chat_id_2)
 
-    # Senaste RSI och MACD-värden
-    latest_rsi = rsi.iloc[-1]
-    latest_macd = macd.iloc[-1]
-    latest_macd_signal = macd_signal.iloc[-1]
-    latest_macd_diff = macd_diff.iloc[-1]
+# Huvudloop
+def run_bot():
+    symbols = ['BTC-USD', 'ETH-USD', 'XAUUSD=X', 'AAPL', 'TSLA', 'SOLANA-USD', 'EURUSD=X']  # Lägg till fler symboler här
+    interval = 900  # 15 minuter i sekunder
+    last_signal_time = 0  # Sista signal tid
 
-    entry_price = data['Close'].iloc[-1]  # Senaste stängningspriset
+    # Skicka testsignal en gång vid uppstart
+    send_test_signal()
 
-    # Logik för köp och sälj baserat på RSI och MACD
-    if latest_rsi <= 30 and latest_macd_diff > 0:  # RSI under 30 och MACD positivt – köp
-        stop_loss, take_profit = calculate_take_profit_and_stop_loss(entry_price)
-        message = f"Köp Signal för {symbol}:\n" \
-                  f"Köppris: {entry_price}\n" \
-                  f"RSI: {latest_rsi}\n" \
-                  f"MACD: {latest_macd}\n" \
-                  f"Rekommenderad Stop Loss: {stop_loss:.2f}\n" \
-                  f"Rekommenderad Take Profit: {take_profit:.2f}"
-        send_message(chat_id_1, message)
-        send_message(chat_id_2, message)
+    while True:
+        current_time = time.time()
+        
+        if current_time - last_signal_time >= interval:
+            for symbol in symbols:
+                data = fetch_data(symbol)
+                signal = check_signal(data, symbol)
+                
+                if signal:
+                    send_signal(signal, chat_id_1)  # Skicka signal till första chatten
+                    send_signal(signal, chat_id_2)  # Skicka signal till andra chatten
+                    last_signal_time = current_time  # Uppdatera senaste signal tid
 
-    elif latest_rsi >= 70 and latest_macd_diff < 0:  # RSI över 70 och MACD negativt – sälj
-        stop_loss, take_profit = calculate_take_profit_and_stop_loss(entry_price)
-        message = f"Sälj Signal för {symbol}:\n" \
-                  f"Säljpris: {entry_price}\n" \
-                  f"RSI: {latest_rsi}\n" \
-                  f"MACD: {latest_macd}\n" \
-                  f"Rekommenderad Stop Loss: {stop_loss:.2f}\n" \
-                  f"Rekommenderad Take Profit: {take_profit:.2f}"
-        send_message(chat_id_1, message)
-        send_message(chat_id_2, message)
+        time.sleep(60)  # Vänta 1 minut innan nästa koll
 
-# Testsignal vid start
-def test_signal():
-    message = "Testsignal: Boten är igång och fungerar korrekt!"
-    send_message(chat_id_1, message)
-    send_message(chat_id_2, message)
-
-# Testa med ett valfritt symbol
-test_signal()
-
-# Huvudloop som kollar signaler var 15:e minut
-while True:
-    check_and_send_signal('BTC-USD')  # Byt ut med symbolen du vill övervaka
-    check_and_send_signal('ETH-USD')  # Lägg till fler symboler här
-    check_and_send_signal('XAUUSD=X')  # Guld mot USD (kan också bytas ut)
-    time.sleep(900)  # Vänta i 15 minuter (900 sekunder)
+if __name__ == "__main__":
+    run_bot()
