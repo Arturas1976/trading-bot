@@ -13,11 +13,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_IDS = [os.getenv("CHAT_ID_1"), os.getenv("CHAT_ID_2")]
 TELEGRAM_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
-# Forex + aktier
-SYMBOLS = [
-    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X", "AUDUSD=X", "USDCAD=X", "NZDUSD=X",
-    "AAPL", "MSFT", "TSLA", "GOOG", "AMZN", "NVDA", "META", "NFLX", "JPM", "V"
-]
+# Begränsad lista för att minska risk för blockering
+SYMBOLS = ["EURUSD=X", "GBPUSD=X", "AAPL", "TSLA"]
 
 def send_telegram_message(message: str):
     for chat_id in CHAT_IDS:
@@ -27,9 +24,9 @@ def send_telegram_message(message: str):
             except requests.RequestException as e:
                 print(f"Telegram error: {e}")
 
-def fetch_data(symbol: str, interval="15m", period="1d"):
+def fetch_data(symbol: str, interval="15m", period="5d"):
     try:
-        df = yf.download(symbol, interval=interval, period=period)
+        df = yf.download(symbol, interval=interval, period=period, progress=False, threads=False)
         if df.empty:
             raise ValueError(f"No data for {symbol}")
         return df
@@ -50,14 +47,15 @@ def generate_tp_sl(price: float, signal: str):
     if signal == "BUY":
         tp = price * 1.025
         sl = price * 0.985
-    else:  # SELL
+    else:
         tp = price * 0.975
         sl = price * 1.015
     return round(tp, 2), round(sl, 2)
 
 def check_signals(df: pd.DataFrame, symbol: str):
     latest = df.iloc[-1]
-    signals = []
+    if pd.isnull(latest["rsi"]) or pd.isnull(latest["macd_diff"]):
+        return None
 
     if latest["rsi"] < 30 and latest["macd_diff"] > 0 and latest["sma_20"] > latest["sma_50"]:
         signal_type = "BUY"
@@ -83,7 +81,6 @@ def analyze():
             continue
         df = apply_indicators(df)
         signal = check_signals(df, symbol)
-
         if signal:
             message = (
                 f"📊 *{signal['symbol']}* - {signal['type']} signal\n"
@@ -98,4 +95,4 @@ if __name__ == "__main__":
     send_telegram_message("🤖 Tradingbot är igång med 15-minutersintervall.")
     while True:
         analyze()
-        time.sleep(900)  # Vänta 15 minuter
+        time.sleep(900)  # 15 minuter
