@@ -1,54 +1,74 @@
-import os
 import time
-import requests
 import yfinance as yf
 import ta
-from datetime import datetime
+import requests
+import os
 
-# Telegram Bot token och chat id
+# Hämtar Telegram API Token och Chat ID via miljövariabler
 API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # Din Telegram Bot Token
 chat_id_1 = os.getenv('CHAT_ID_1')  # Första Telegram Chat ID
 chat_id_2 = os.getenv('CHAT_ID_2')  # Andra Telegram Chat ID
 
 # Funktion för att skicka meddelande till Telegram
-def send_message(chat_id, message):
-    url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage?chat_id={chat_id}&text={message}"
-    response = requests.get(url)
-    return response.json()
-
-# Funktion för att hämta RSI och skapa signaler
-def get_rsi_signal():
-    # Hämta senaste data för BTC/USD
-    symbol = 'BTC-USD'
-    data = yf.download(symbol, period="1d", interval="15m")
+def send_message_to_telegram(message):
+    url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
     
-    # Beräkna RSI
-    close_prices = data['Close']
-    rsi = ta.RSI(close_prices, timeperiod=14)[-1]  # Få senaste RSI-värdet
+    # Skicka till båda chat-id:n
+    params_1 = {
+        "chat_id": chat_id_1,
+        "text": message
+    }
+    params_2 = {
+        "chat_id": chat_id_2,
+        "text": message
+    }
+    
+    try:
+        # Skicka till första chat-id
+        response_1 = requests.get(url, params=params_1)
+        if response_1.status_code != 200:
+            print(f"Failed to send message to chat_id_1: {response_1.status_code}, {response_1.text}")
+        
+        # Skicka till andra chat-id
+        response_2 = requests.get(url, params=params_2)
+        if response_2.status_code != 200:
+            print(f"Failed to send message to chat_id_2: {response_2.status_code}, {response_2.text}")
+    
+    except Exception as e:
+        print(f"Error sending message: {e}")
 
-    # Skapa signal baserat på RSI
-    if rsi < 30:
-        return "RSI är under 30 - *KÖP*"
-    elif rsi > 70:
-        return "RSI är över 70 - *SÄLJ*"
-    else:
-        return "RSI är neutral - *HÅLL*"
+# Testsignal när boten startar
+send_message_to_telegram("Botten är online och fungerar!")
 
-# Skicka testsignal vid scriptstart
-def send_test_signal():
-    message = "Testsignal: Bot är igång och redo att skicka signals!"
-    send_message(chat_id_1, message)
-    send_message(chat_id_2, message)
+# Funktion för att hämta marknadsdata och beräkna tekniska indikatorer
+def fetch_data():
+    # Här hämtar vi marknadsdata för Bitcoin som exempel, ändra symbolen för andra instrument
+    data = yf.download('BTC-USD', period='1d', interval='15m')
 
-# Huvudlogik för att köra signaler
-def main():
-    send_test_signal()  # Skicka en testsignal vid start
-    while True:
-        signal = get_rsi_signal()  # Hämta signal
-        print(f"{datetime.now()}: {signal}")  # Skriv ut signal i terminalen
-        send_message(chat_id_1, signal)  # Skicka till första Telegram chat
-        send_message(chat_id_2, signal)  # Skicka till andra Telegram chat
-        time.sleep(900)  # Vänta 15 minuter (900 sekunder) innan nästa signal
+    # Beräkna RSI med hjälp av ta-biblioteket
+    data['rsi'] = ta.momentum.RSIIndicator(data['Close'], window=14).rsi()
 
-if __name__ == "__main__":
-    main()
+    # Lägg till fler tekniska indikatorer vid behov
+    # T.ex., MA, MACD, Bollinger Bands osv.
+
+    return data
+
+# Funktion för att skicka köp-/säljsignaler baserat på RSI
+def check_signals(data):
+    latest_rsi = data['rsi'].iloc[-1]  # Senaste RSI-värdet
+
+    # När RSI är under 30, köp
+    if latest_rsi < 30:
+        send_message_to_telegram("RSI är under 30 - KÖP!")
+
+    # När RSI är över 70, sälj
+    elif latest_rsi > 70:
+        send_message_to_telegram("RSI är över 70 - SÄLJ!")
+
+# Huvudloop för att hämta data och kontrollera signaler
+while True:
+    data = fetch_data()
+    check_signals(data)
+    
+    # Vänta 15 minuter innan nästa kontroll
+    time.sleep(15 * 60)
