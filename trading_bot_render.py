@@ -57,9 +57,9 @@ def generate_signal(df):
 # Skicka signal till Telegram
 def send_to_telegram(message):
     try:
-        bot.send_message(chat_id=CHAT_ID, text=message)
+        bot.send_message(chat_id=group_chat_id, text=message)
     except Exception as e:
-        print(f"Fel vid sändning till Telegram: {e}")
+        print(f"Fel vid skickande till gruppen: {e}")
 
 # Huvudloop
 def run_bot():
