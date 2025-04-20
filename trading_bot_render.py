@@ -78,7 +78,7 @@ def analyze_symbols():
             send_telegram_message(message, chat_id_1)
             send_telegram_message(message, chat_id_2)
 
-# Skicka uppstartssignal till Telegram
+# Skicka uppstartssignal till Telegram (skickas en gång vid uppstart)
 def send_startup_signal():
     startup_message = "Trading Bot is up and running!"
     send_telegram_message(startup_message, chat_id_1)
@@ -96,7 +96,7 @@ def send_error_signal(error_message):
 
 # Run the bot every 15 minutes
 if __name__ == "__main__":
-    send_test_signal()  # Send a test signal at the start (once)
+    send_startup_signal()  # Skickar testmeddelande vid uppstart (en gång)
     while True:
         try:
             analyze_symbols()
