@@ -74,10 +74,10 @@ def main():
     send_telegram_message("✅ <b>Trading botas paleistas!</b>\nTikrinam rinkas kas 15 min...")
 
     symbols = [
-        "BTC-USD", "ETH-USD", "SOL-USD",
-        "AAPL", "TSLA", "MSFT",
-        "EURUSD=X", "GBPUSD=X", "XAUUSD=X"
-    ]
+    "BTC-USD", "ETH-USD", "SOL-USD",
+    "AAPL", "TSLA", "MSFT",
+    "EURUSD=X", "GBPUSD=X", "GC=F"  # Pakeistas auksas
+]
 
     while True:
         for symbol in symbols:
