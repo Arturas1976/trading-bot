@@ -43,19 +43,33 @@ def send_initial_message():
 
 # Funktion för att hämta marknadsdata och beräkna tekniska indikatorer
 def fetch_data():
-    # Här hämtar vi marknadsdata för Bitcoin som exempel, ändra symbolen för andra instrument
-    data = yf.download('BTC-USD', period='1d', interval='15m')
+    try:
+        # Här hämtar vi marknadsdata för Bitcoin som exempel, ändra symbolen för andra instrument
+        data = yf.download('BTC-USD', period='1d', interval='15m')
 
-    # Beräkna RSI med hjälp av ta-biblioteket
-    data['rsi'] = ta.momentum.RSIIndicator(data['Close'], window=14).rsi()
+        # Kontrollera att vi har data
+        if data.empty:
+            print("Ingen data mottogs.")
+            return None
+        
+        # Beräkna RSI med hjälp av ta-biblioteket
+        rsi_indicator = ta.momentum.RSIIndicator(data['Close'], window=14)
+        data['rsi'] = rsi_indicator.rsi()
 
-    # Lägg till fler tekniska indikatorer vid behov
-    # T.ex., MA, MACD, Bollinger Bands osv.
+        # Lägg till fler tekniska indikatorer vid behov
+        # T.ex., MA, MACD, Bollinger Bands osv.
 
-    return data
+        return data
+    
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+        return None
 
 # Funktion för att skicka köp-/säljsignaler baserat på RSI
 def check_signals(data):
+    if data is None:
+        return
+
     latest_rsi = data['rsi'].iloc[-1]  # Senaste RSI-värdet
 
     # När RSI är under 30, köp
@@ -68,12 +82,14 @@ def check_signals(data):
 
 # Skicka testmeddelande vid uppstart
 if __name__ == "__main__":
+    # Skicka endast ett meddelande vid start
     send_initial_message()
 
     # Huvudloop för att hämta data och kontrollera signaler
     while True:
         data = fetch_data()
-        check_signals(data)
+        if data is not None:
+            check_signals(data)
         
-        # Vänta 15 minuter innan nästa kontroll
+        # Vänta 15 minuter innan nästa kontroll (inte varje minut)
         time.sleep(15 * 60)
