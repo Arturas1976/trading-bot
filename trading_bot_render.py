@@ -1,82 +1,88 @@
 import yfinance as yf
+import time
+import requests
+import os
 import pandas as pd
 import ta
-import requests
-import time
-import os
 
-# Telegram duomenys iš aplinkos kintamųjų
-API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-group_chat_id = os.getenv('GROUP_CHAT_ID')
+# Gauti duomenis iš Environment Variables
+API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')  # Tavo Telegram bot token
+GROUP_CHAT_ID = os.getenv('GROUP_CHAT_ID')   # Tavo Telegram grupės chat ID (pvz. -1001234567890)
 
-# Siųsti pranešimą į Telegram
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{API_TOKEN}/sendMessage"
-    data = {"chat_id": group_chat_id, "text": message}
+    data = {
+        "chat_id": GROUP_CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
     try:
-        requests.post(url, data=data)
+        response = requests.post(url, data=data)
+        if not response.ok:
+            print("❌ Klaida siunčiant į Telegram:", response.text)
     except Exception as e:
-        print(f"Klaida siunčiant žinutę: {e}")
+        print("❌ Išimtis:", e)
 
-# Gauti signalą iš indikatorių
-def generate_signal(df):
-    if df is None or df.empty:
-        return "⚠️ Duomenų nėra."
+def analyze_market(symbol):
+    try:
+        df = yf.download(symbol, period="7d", interval="15m")
+        if df.empty or len(df) < 100:
+            return
 
-    close = df['Close']
+        df.dropna(inplace=True)
 
-    # RSI
-    df['RSI'] = ta.momentum.RSIIndicator(close, window=14).rsi()
+        # RSI
+        rsi = ta.momentum.RSIIndicator(df['Close'], window=14).rsi()
+        last_rsi = rsi.iloc[-1]
 
-    # MACD
-    macd = ta.trend.MACD(close)
-    df['MACD'] = macd.macd()
-    df['MACD_signal'] = macd.macd_signal()
+        # Moving Average
+        ma = ta.trend.SMAIndicator(df['Close'], window=20).sma_indicator()
+        last_ma = ma.iloc[-1]
 
-    # MA20
-    df['MA20'] = ta.trend.SMAIndicator(close, window=20).sma_indicator()
+        # MACD
+        macd = ta.trend.MACD(df['Close'])
+        macd_val = macd.macd_diff().iloc[-1]
 
-    # Bollinger Bands
-    bb = ta.volatility.BollingerBands(close, window=20, window_dev=2)
-    df['BB_upper'] = bb.bollinger_hband()
-    df['BB_lower'] = bb.bollinger_lband()
+        # Bollinger Bands
+        bb = ta.volatility.BollingerBands(df['Close'])
+        upper = bb.bollinger_hband().iloc[-1]
+        lower = bb.bollinger_lband().iloc[-1]
+        close_price = df['Close'].iloc[-1]
 
-    latest = df.iloc[-1]
+        message = f"📊 <b>{symbol}</b>\n"
+        message += f"📉 RSI: {last_rsi:.2f}\n"
+        message += f"📈 MA(20): {last_ma:.2f}\n"
+        message += f"📊 MACD Diff: {macd_val:.4f}\n"
+        message += f"📎 Bollinger: {lower:.2f} - {upper:.2f}\n"
+        message += f"💰 Kaina: {close_price:.2f}\n"
 
-    signals = []
+        signal = None
+        if last_rsi < 30:
+            signal = "🟢 <b>PIRKTI</b> (RSI < 30)"
+        elif last_rsi > 70:
+            signal = "🔴 <b>PARDUOTI</b> (RSI > 70)"
 
-    # RSI
-    if latest['RSI'] < 30:
-        signals.append('🔵 RSI: PIRKTI (RSI < 30)')
-    elif latest['RSI'] > 70:
-        signals.append('🔴 RSI: PARDUOTI (RSI > 70)')
+        if signal:
+            message += f"\n🚨 SIGNALAS: {signal}"
 
-    # MACD crossover
-    if latest['MACD'] > latest['MACD_signal']:
-        signals.append('🔵 MACD: Bullish (MACD > Signal)')
-    else:
-        signals.append('🔴 MACD: Bearish (MACD < Signal)')
+        send_telegram_message(message)
 
-    # Kaina žemiau BB
-    if latest['Close'] < latest['BB_lower']:
-        signals.append('🔵 Kaina žemiau Bollinger Bands → galimas pirkimo taškas')
-    elif latest['Close'] > latest['BB_upper']:
-        signals.append('🔴 Kaina virš Bollinger Bands → galimas pardavimo taškas')
+    except Exception as e:
+        print(f"Klaida su {symbol}: {e}")
 
-    return '\n'.join(signals) if signals else "🟡 Nėra aiškaus signalo"
+def main():
+    send_telegram_message("✅ <b>Trading botas paleistas!</b>\nTikrinam rinkas kas 15 min...")
 
-# Testinė žinutė kai botas startuoja
-send_telegram_message("✅ Botas paleistas! Tikriname rinkas...")
+    symbols = [
+        "BTC-USD", "ETH-USD", "SOL-USD",
+        "AAPL", "TSLA", "MSFT",
+        "EURUSD=X", "GBPUSD=X", "XAUUSD=X"
+    ]
 
-# Simboliai
-symbols = ['BTC-USD', 'ETH-USD', 'AAPL', 'SOL-USD', 'EURUSD=X', 'TSLA', 'GC=F']
+    while True:
+        for symbol in symbols:
+            analyze_market(symbol)
+        time.sleep(900)  # 15 min (900 sek)
 
-while True:
-    for symbol in symbols:
-        try:
-            df = yf.download(symbol, interval="1h", period="2d")
-            signal = generate_signal(df)
-            send_telegram_message(f"📊 {symbol} signalas:\n{signal}")
-        except Exception as e:
-            send_telegram_message(f"⚠️ Klaida tikrinant {symbol}: {e}")
-    time.sleep(900)  # Kartojam kas 15 minučių (900 sekundžių)
+if __name__ == "__main__":
+    main()
