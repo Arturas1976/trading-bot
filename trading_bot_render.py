@@ -1,110 +1,101 @@
 import os
-import time
 import requests
 import yfinance as yf
-import ta
 import pandas as pd
-from datetime import datetime
+import numpy as np
+import ta
+import time
+from dotenv import load_dotenv
 
-# Telegram Bot Setup
-API_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-chat_id_1 = os.getenv('CHAT_ID_1')
-chat_id_2 = os.getenv('CHAT_ID_2')
+load_dotenv()
 
-# List of symbols to analyze
-symbols = [
-    'BTC-USD', 'ETH-USD', 'GBPUSD=X', 'AUDUSD=X', 'USDJPY=X', 
-    'TSLA', 'AAPL', 'GOOG', 'AMZN', 'MSFT', 'NVDA', 'META', 
-    'SPY', 'NFLX', 'BCH-USD', 'SOL-USD', 'ADA-USD'
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_IDS = [os.getenv("CHAT_ID_1"), os.getenv("CHAT_ID_2")]
+TELEGRAM_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+
+# Forex + aktier
+SYMBOLS = [
+    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X", "AUDUSD=X", "USDCAD=X", "NZDUSD=X",
+    "AAPL", "MSFT", "TSLA", "GOOG", "AMZN", "NVDA", "META", "NFLX", "JPM", "V"
 ]
 
-# Global variable to prevent repeated startup signals
-startup_sent = False
+def send_telegram_message(message: str):
+    for chat_id in CHAT_IDS:
+        if chat_id:
+            try:
+                requests.post(TELEGRAM_URL, data={"chat_id": chat_id, "text": message})
+            except requests.RequestException as e:
+                print(f"Telegram error: {e}")
 
-# Function to send message to Telegram
-def send_telegram_message(message, chat_id):
-    url = f'https://api.telegram.org/bot{API_TOKEN}/sendMessage'
-    data = {'chat_id': chat_id, 'text': message}
-    response = requests.post(url, data=data)
-    return response.json()
-
-# Function to calculate RSI and MACD
-def calculate_indicators(data):
-    rsi = ta.momentum.RSIIndicator(data['Close'], window=14).rsi()[-1]
-    macd = ta.trend.MACD(data['Close'], window_slow=26, window_fast=12, window_sign=9)
-    macd_diff = macd.macd_diff()[-1]
-    return rsi, macd_diff
-
-# Function to fetch data from Yahoo Finance
-def fetch_data(symbol):
+def fetch_data(symbol: str, interval="15m", period="1d"):
     try:
-        data = yf.download(symbol, period='1d', interval='15m')
-        data.dropna(inplace=True)
-        if data.empty:
-            raise ValueError(f"No data found for {symbol}")
-        data['Close'] = data['Close'].squeeze()  # Omvandla till en-dimensionell om den är 2D
-        return data
+        df = yf.download(symbol, interval=interval, period=period)
+        if df.empty:
+            raise ValueError(f"No data for {symbol}")
+        return df
     except Exception as e:
-        error_message = f"Error fetching data for {symbol}: {str(e)}"
-        send_telegram_message(error_message, chat_id_1)
-        send_telegram_message(error_message, chat_id_2)
+        print(f"Data fetch error for {symbol}: {e}")
         return None
 
-# Function to get recommendation for take profit and stop loss
-def get_recommendations(symbol, action, data):
-    price = data['Close'].iloc[-1]
-    tp = price * 1.05 if action == 'buy' else price * 0.95
-    sl = price * 0.95 if action == 'buy' else price * 1.05
-    return f"Recommendation: Take Profit at {tp:.2f}, Stop Loss at {sl:.2f}"
+def apply_indicators(df: pd.DataFrame):
+    df = df.copy()
+    df["rsi"] = ta.momentum.RSIIndicator(df["Close"]).rsi()
+    macd = ta.trend.MACD(df["Close"])
+    df["macd_diff"] = macd.macd_diff()
+    df["sma_20"] = ta.trend.SMAIndicator(df["Close"], window=20).sma_indicator()
+    df["sma_50"] = ta.trend.SMAIndicator(df["Close"], window=50).sma_indicator()
+    return df
 
-# Function to analyze the symbols
-def analyze_symbols():
-    for symbol in symbols:
-        data = fetch_data(symbol)
-        if data is None:
-            continue  # Skip symbol if no data is available
+def generate_tp_sl(price: float, signal: str):
+    if signal == "BUY":
+        tp = price * 1.025
+        sl = price * 0.985
+    else:  # SELL
+        tp = price * 0.975
+        sl = price * 1.015
+    return round(tp, 2), round(sl, 2)
 
-        rsi, macd_diff = calculate_indicators(data)
-        
-        # Check if RSI and MACD conditions are met
-        if rsi < 30 and macd_diff > 0:
-            message = f"Buy Signal for {symbol}!\nRSI: {rsi:.2f}\nMACD Diff: {macd_diff:.2f}"
-            recommendations = get_recommendations(symbol, 'buy', data)
-            message += "\n" + recommendations
-            send_telegram_message(message, chat_id_1)
-            send_telegram_message(message, chat_id_2)
+def check_signals(df: pd.DataFrame, symbol: str):
+    latest = df.iloc[-1]
+    signals = []
 
-        elif rsi > 70 and macd_diff < 0:
-            message = f"Sell Signal for {symbol}!\nRSI: {rsi:.2f}\nMACD Diff: {macd_diff:.2f}"
-            recommendations = get_recommendations(symbol, 'sell', data)
-            message += "\n" + recommendations
-            send_telegram_message(message, chat_id_1)
-            send_telegram_message(message, chat_id_2)
+    if latest["rsi"] < 30 and latest["macd_diff"] > 0 and latest["sma_20"] > latest["sma_50"]:
+        signal_type = "BUY"
+    elif latest["rsi"] > 70 and latest["macd_diff"] < 0 and latest["sma_20"] < latest["sma_50"]:
+        signal_type = "SELL"
+    else:
+        return None
 
-# Skicka uppstartssignal till Telegram
-def send_startup_signal():
-    global startup_sent
-    if not startup_sent:
-        startup_message = "Trading Bot is up and running!"
-        send_telegram_message(startup_message, chat_id_1)
-        send_telegram_message(startup_message, chat_id_2)
-        startup_sent = True
+    tp, sl = generate_tp_sl(latest["Close"], signal_type)
+    return {
+        "symbol": symbol,
+        "type": signal_type,
+        "price": round(latest["Close"], 2),
+        "take_profit": tp,
+        "stop_loss": sl,
+        "time": latest.name.strftime("%Y-%m-%d %H:%M")
+    }
 
-# Vid uppstart
+def analyze():
+    for symbol in SYMBOLS:
+        df = fetch_data(symbol)
+        if df is None:
+            continue
+        df = apply_indicators(df)
+        signal = check_signals(df, symbol)
+
+        if signal:
+            message = (
+                f"📊 *{signal['symbol']}* - {signal['type']} signal\n"
+                f"🕒 {signal['time']}\n"
+                f"💵 Pris: {signal['price']}\n"
+                f"🎯 Take Profit: {signal['take_profit']}\n"
+                f"🛑 Stop Loss: {signal['stop_loss']}"
+            )
+            send_telegram_message(message)
+
 if __name__ == "__main__":
-    send_startup_signal()  # Skickar meddelande till båda kontona
-
-# Signal if the bot doesn't work correctly
-def send_error_signal(error_message):
-    message = f"Alert: Something went wrong with the Trading Bot!\nError: {error_message}"
-    send_telegram_message(message, chat_id_1)
-    send_telegram_message(message, chat_id_2)
-
-# Run the bot every 15 minutes
-if __name__ == "__main__":
+    send_telegram_message("🤖 Tradingbot är igång med 15-minutersintervall.")
     while True:
-        try:
-            analyze_symbols()
-        except Exception as e:
-            send_error_signal(str(e))
-        time.sleep(900)  # 15 minutes interval
+        analyze()
+        time.sleep(900)  # Vänta 15 minuter
