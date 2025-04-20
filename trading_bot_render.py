@@ -67,12 +67,13 @@ def check_signals(data):
         send_message_to_telegram("RSI är över 70 - SÄLJ!")
 
 # Skicka testmeddelande vid uppstart
-send_initial_message()
+if __name__ == "__main__":
+    send_initial_message()
 
-# Huvudloop för att hämta data och kontrollera signaler
-while True:
-    data = fetch_data()
-    check_signals(data)
-    
-    # Vänta 15 minuter innan nästa kontroll
-    time.sleep(15 * 60)
+    # Huvudloop för att hämta data och kontrollera signaler
+    while True:
+        data = fetch_data()
+        check_signals(data)
+        
+        # Vänta 15 minuter innan nästa kontroll
+        time.sleep(15 * 60)
