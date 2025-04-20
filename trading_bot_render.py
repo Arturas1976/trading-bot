@@ -1,86 +1,83 @@
 import yfinance as yf
+import pandas as pd
 import ta
 import time
-import requests
-from datetime import datetime
+import os
+from telegram import Bot
 
-# === TELEGRAM DUOMENYS (ĮRAŠYK SAVO) ===
-TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'
-CHAT_ID = 'YOUR_CHAT_ID'
+# Telegram inställningar från miljövariabler
+TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-# === INSTRUMENTAI ===
-symbols = [
-    "BTC-USD", "ETH-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD", "AVAX-USD",
-    "AAPL", "MSFT", "GOOG", "AMZN", "META", "TSLA", "NVDA",
-    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCHF=X", "USDCAD=X",
-    "GC=F", "SI=F", "CL=F", "HG=F", "PL=F", "PA=F"
-]
+bot = Bot(token=TOKEN)
 
-def send_telegram_message(message):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message}
+# Symboler att övervaka
+symbols = ["BTC-USD", "ETH-USD", "AAPL", "SOL-USD", "EURUSD=X", "TSLA", "GC=F"]  # Gold
+
+# Funktion för att hämta marknadsdata
+def fetch_data(symbol, interval="1h", period="7d"):
+    df = yf.download(tickers=symbol, interval=interval, period=period)
+    df.dropna(inplace=True)
+    return df
+
+# Lägg till tekniska indikatorer
+def add_indicators(df):
+    df['rsi'] = ta.momentum.RSIIndicator(close=df['Close']).rsi()
+    df['ma'] = ta.trend.SMAIndicator(close=df['Close'], window=14).sma_indicator()
+    macd = ta.trend.MACD(close=df['Close'])
+    df['macd'] = macd.macd()
+    df['macd_signal'] = macd.macd_signal()
+    bb = ta.volatility.BollingerBands(close=df['Close'])
+    df['bb_upper'] = bb.bollinger_hband()
+    df['bb_lower'] = bb.bollinger_lband()
+    return df
+
+# Skapa signal utifrån indikatorer
+def generate_signal(df):
+    last = df.iloc[-1]
+    signal = []
+
+    if last['rsi'] < 30:
+        signal.append(f"🟢 RSI < 30 → KÖP ({last['rsi']:.2f})")
+    elif last['rsi'] > 70:
+        signal.append(f"🔴 RSI > 70 → SÄLJ ({last['rsi']:.2f})")
+
+    if last['macd'] > last['macd_signal']:
+        signal.append("📈 MACD signal → KÖP")
+    elif last['macd'] < last['macd_signal']:
+        signal.append("📉 MACD signal → SÄLJ")
+
+    if last['Close'] < last['bb_lower']:
+        signal.append("🧊 Under Bollinger Band → MÖJLIG BOTTEN")
+    elif last['Close'] > last['bb_upper']:
+        signal.append("🔥 Över Bollinger Band → MÖJLIG TOPP")
+
+    return "\n".join(signal) if signal else None
+
+# Skicka signal till Telegram
+def send_to_telegram(message):
     try:
-        requests.post(url, json=payload)
+        bot.send_message(chat_id=CHAT_ID, text=message)
     except Exception as e:
-        print("Telegram klaida:", e)
+        print(f"Fel vid sändning till Telegram: {e}")
 
-def analyze(symbol):
-    try:
-        df = yf.download(symbol, period="2d", interval="1h")
-        if df.empty or len(df) < 50:
-            return None
+# Huvudloop
+def run_bot():
+    while True:
+        print("🔁 Kontrollerar marknaden...")
+        for symbol in symbols:
+            try:
+                df = fetch_data(symbol)
+                df = add_indicators(df)
+                signal = generate_signal(df)
+                if signal:
+                    full_message = f"📊 {symbol}\n{signal}"
+                    print(full_message)
+                    send_to_telegram(full_message)
+            except Exception as e:
+                print(f"Fel med {symbol}: {e}")
 
-        df = df.dropna()
-        close = df['Close']
+        time.sleep(3600)  # Kör varje timme
 
-        # RSI
-        rsi = ta.momentum.RSIIndicator(close).rsi().iloc[-1]
-
-        # MA
-        ma50 = close.rolling(50).mean().iloc[-1]
-        ma200 = close.rolling(200).mean().iloc[-1]
-
-        # MACD
-        macd = ta.trend.MACD(close)
-        macd_line = macd.macd().iloc[-1]
-        signal_line = macd.macd_signal().iloc[-1]
-
-        # Bollinger
-        bb = ta.volatility.BollingerBands(close)
-        bb_upper = bb.bollinger_hband().iloc[-1]
-        bb_lower = bb.bollinger_lband().iloc[-1]
-
-        price = close.iloc[-1]
-        signal = None
-
-        if rsi < 30 and price < bb_lower and macd_line > signal_line:
-            signal = "📈 PIRKTI"
-        elif rsi > 70 and price > bb_upper and macd_line < signal_line:
-            signal = "📉 PARDUOTI"
-
-        if signal:
-            sl = round(price * 0.97, 2)
-            tp = round(price * 1.05, 2)
-            msg = f"""
-📊 {symbol}
-Signalas: {signal}
-Kaina: {price:.2f}
-RSI: {rsi:.2f}
-MA50: {ma50:.2f}
-MA200: {ma200:.2f}
-MACD: {macd_line:.2f} / {signal_line:.2f}
-Bollinger: [{bb_lower:.2f} - {bb_upper:.2f}]
-SL: {sl} | TP: {tp}
-Laikas: {datetime.now().strftime('%Y-%m-%d %H:%M')}
-"""
-            send_telegram_message(msg)
-
-    except Exception as e:
-        print(f"Klaida analizėje {symbol}: {e}")
-
-while True:
-    for symbol in symbols:
-        analyze(symbol)
-        time.sleep(2)
-    print("🔁 Atnaujinimas baigtas, laukiama 1 valanda...")
-    time.sleep(3600)
+if __name__ == "__main__":
+    run_bot()
