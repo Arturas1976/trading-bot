@@ -39,6 +39,7 @@ def fetch_data(symbol):
         data.dropna(inplace=True)
         if data.empty:
             raise ValueError(f"No data found for {symbol}")
+        data['Close'] = data['Close'].squeeze()  # Omvandla till en-dimensionell om den är 2D
         return data
     except Exception as e:
         error_message = f"Error fetching data for {symbol}: {str(e)}"
@@ -77,11 +78,15 @@ def analyze_symbols():
             send_telegram_message(message, chat_id_1)
             send_telegram_message(message, chat_id_2)
 
-# Test signal on bot startup (only once)
-def send_test_signal():
-    message = "The Trading Bot is now live and running!"
-    send_telegram_message(message, chat_id_1)
-    send_telegram_message(message, chat_id_2)
+# Skicka uppstartssignal till Telegram
+def send_startup_signal():
+    startup_message = "Trading Bot is up and running!"
+    send_telegram_message(startup_message, chat_id_1)
+    send_telegram_message(startup_message, chat_id_2)
+
+# Vid uppstart
+if __name__ == "__main__":
+    send_startup_signal()  # Skickar meddelande till båda kontona
 
 # Signal if the bot doesn't work correctly
 def send_error_signal(error_message):
