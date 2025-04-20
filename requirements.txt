@@ -1,5 +1,5 @@
 requests
 python-telegram-bot
 yfinance
-TA-Lib
+ta
 numpy
