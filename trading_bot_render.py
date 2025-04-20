@@ -63,6 +63,9 @@ def send_to_telegram(message):
 
 # Huvudloop
 def run_bot():
+    # 🔹 Testsignal när boten startar
+    send_to_telegram("✅ Trading-boten är live på Render!")
+    
     while True:
         print("🔁 Kontrollerar marknaden...")
         for symbol in symbols:
