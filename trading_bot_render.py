@@ -18,6 +18,9 @@ symbols = [
     'SPY', 'NFLX', 'BCH-USD', 'SOL-USD', 'ADA-USD'
 ]
 
+# Global variable to prevent repeated startup signals
+startup_sent = False
+
 # Function to send message to Telegram
 def send_telegram_message(message, chat_id):
     url = f'https://api.telegram.org/bot{API_TOKEN}/sendMessage'
@@ -78,11 +81,14 @@ def analyze_symbols():
             send_telegram_message(message, chat_id_1)
             send_telegram_message(message, chat_id_2)
 
-# Skicka uppstartssignal till Telegram (skickas en gång vid uppstart)
+# Skicka uppstartssignal till Telegram
 def send_startup_signal():
-    startup_message = "Trading Bot is up and running!"
-    send_telegram_message(startup_message, chat_id_1)
-    send_telegram_message(startup_message, chat_id_2)
+    global startup_sent
+    if not startup_sent:
+        startup_message = "Trading Bot is up and running!"
+        send_telegram_message(startup_message, chat_id_1)
+        send_telegram_message(startup_message, chat_id_2)
+        startup_sent = True
 
 # Vid uppstart
 if __name__ == "__main__":
@@ -96,7 +102,6 @@ def send_error_signal(error_message):
 
 # Run the bot every 15 minutes
 if __name__ == "__main__":
-    send_startup_signal()  # Skickar testmeddelande vid uppstart (en gång)
     while True:
         try:
             analyze_symbols()
