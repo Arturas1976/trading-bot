@@ -1,5 +1,3 @@
-yfinance
-ta
 requests
-python-telegram-bot
-pandas
+yfinance
+TA-Lib
