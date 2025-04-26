@@ -19,18 +19,33 @@ logger = logging.getLogger(__name__)
 
 CRYPTO_SYMBOLS = ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"]
 
+import requests  # Lägg till denna import
+
+def get_real_price(symbol):
+    """Hämta riktigt pris från Binance API"""
+    try:
+        response = requests.get(f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}USDT")
+        data = response.json()
+        return float(data["price"])
+    except Exception as e:
+        logger.error(f"Kunde inte hämta pris för {symbol}: {e}")
+        return None
+
 def generate_signal(symbol):
     rsi = random.uniform(30, 70)
     macd = random.choice(["BULLISH", "BEARISH", "NEUTRAL"])
     
+    # Hämta riktigt pris från Binance
+    entry_price = get_real_price(symbol)
+    if not entry_price:
+        return None  # Om API-anropet misslyckas
+    
     if rsi < 40 and macd == "BULLISH":
         action = "KÖP"
-        entry_price = round(random.uniform(1, 100000), 2)
         take_profit = round(entry_price * 1.03, 2)
         stop_loss = round(entry_price * 0.98, 2)
     elif rsi > 60 and macd == "BEARISH":
         action = "SÄLJ"
-        entry_price = round(random.uniform(1, 100000), 2)
         take_profit = round(entry_price * 0.97, 2)
         stop_loss = round(entry_price * 1.02, 2)
     else:
