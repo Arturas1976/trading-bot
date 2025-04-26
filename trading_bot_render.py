@@ -29,7 +29,7 @@ def generate_signal(symbol):
         take_profit = round(entry_price * 1.03, 2)
         stop_loss = round(entry_price * 0.98, 2)
     elif rsi > 60 and macd == "BEARISH":
-        action = "SLUTA"
+        action = "SÄLJ"
         entry_price = round(random.uniform(1, 100000), 2)
         take_profit = round(entry_price * 0.97, 2)
         stop_loss = round(entry_price * 1.02, 2)
@@ -38,7 +38,6 @@ def generate_signal(symbol):
     
     return (
         f"📈 **{symbol}/USDT**\n"
-        f"🔄 RSI: {round(rsi, 2)}, MACD: {macd}\n"
         f"🚀 {action} @ {entry_price}\n"
         f"🎯 Take-Profit: {take_profit}\n"
         f"🛑 Stop-Loss: {stop_loss}\n"
