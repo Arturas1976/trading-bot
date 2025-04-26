@@ -1,5 +1,6 @@
-pandas==2.2.2
-numpy==1.26.4
-yfinance==0.2.33
-python-telegram-bot==13.15
-python-dotenv==1.0.1
+python-telegram-bot==20.5
+python-dotenv==1.0.0
+requests==2.31.0
+schedule==1.2.0
+pandas==2.0.3  # För eventuell dataanalys (RSI/MACD)
+numpy==1.24.3   # För matematiska beräkningar
