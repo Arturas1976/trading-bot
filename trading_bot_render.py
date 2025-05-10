@@ -72,7 +72,7 @@ async def send_auto_signals(context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 **Kryptoboten är nu igång!**\n"
-        "🔔 Du kommer få signaler var 15:e minut."
+        "🔔 Du kommer få signaler var 1 timme."
     )
     
     # Kontrollera att job_queue finns
@@ -82,7 +82,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     context.job_queue.run_repeating(
         send_auto_signals,
-        interval=900,
+        interval=3600,  # 3600 sekunder = 1 timme
         first=10,
         chat_id=update.effective_chat.id
     )
